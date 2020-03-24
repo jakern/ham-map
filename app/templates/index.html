@@ -1,0 +1,176 @@
+<html><head>
+
+	<title>HAM base plotter</title>
+
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+	<link rel="shortcut icon" type="image/x-icon" href="docs/images/favicon.ico">
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.4.0/dist/leaflet.css" integrity="sha512-puBpdR0798OZvTTbP4A8Ix/l+A4dHDD0DGqYW6RQ+9jxkRFclaxxQb/SJAWZfWAkuyeQUytO7+7N4QKrDh+drA==" crossorigin="">
+    <script src="https://unpkg.com/leaflet@1.4.0/dist/leaflet.js" integrity="sha512-QVftwZFqvtRNi0ZyCtsznlKSWOStnDORoefr1enyq5mVL4tmKB3S/EnC3rRJcxCPavG10IcrVGSmPh6Qw5lwrg==" crossorigin=""></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.4.8/d3.min.js"></script>
+		<!-- <script src="{{ url_for('static', filename='voronoi.js') }}"></script> -->
+		<style>
+		#list {
+			background-color: white;
+			overflow-y: auto;
+			max-height: 500px;
+		}
+		.list-item {
+			box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2); /* this adds the "card" effect */
+			padding: 8px;
+			text-align: center;
+			background-color: #f1f1f1;
+		}
+
+		.callsign {
+			font-weight: 800;
+		}
+
+		.name {
+
+		}
+		</style>
+</head>
+<body>
+<div id="mapid" style="width: 100%; height: 100%; position: relative;" class="leaflet-container leaflet-touch leaflet-retina leaflet-fade-anim leaflet-grab leaflet-touch-drag leaflet-touch-zoom" tabindex="0">
+	<!-- <div class="leaflet-pane leaflet-map-pane" style="transform: translate3d(0px, 0px, 0px);"> -->
+		<!-- <div class="leaflet-pane leaflet-tile-pane">
+			<div class="leaflet-layer " style="z-index: 1; opacity: 1;">
+				<a class="leaflet-control-zoom-in" href="#" title="Zoom in" role="button" aria-label="Zoom in">+</a>
+				<a class="leaflet-control-zoom-out" href="#" title="Zoom out" role="button" aria-label="Zoom out">−</a>
+			</div>
+		</div>
+		<div class="leaflet-top leaflet-right">
+			<input class="form-control" id="search_input" type="text" name="search" value="">
+			<button type="form-control button" name="button" onclick="search(document.getElementById('search_input').value)">search</button>
+			<div id='list'></div>
+		</div>
+		<div class="leaflet-bottom leaflet-left"></div>
+		<div class="leaflet-bottom leaflet-right">
+			<div class="leaflet-control-attribution leaflet-control">
+				<a href="http://leafletjs.com" title="A JS library for interactive maps">Leaflet</a> | Map data © <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors, <a href="https://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>, Imagery © <a href="https://www.mapbox.com/">Mapbox</a>
+			</div>
+		</div> -->
+	<!-- </div> -->
+</div>
+
+<script>
+
+	var mymap = L.map('mapid').setView([39.8283,-98.5795], 5);
+	var list = [];
+
+	L.tileLayer('https://api.tiles.mapbox.com/v4/{id}/{z}/{x}/{y}.png?access_token=pk.eyJ1IjoibWFwYm94IiwiYSI6ImNpejY4NXVycTA2emYycXBndHRqcmZ3N3gifQ.rJcFIG214AriISLbB6B5aw', {
+		maxZoom: 18,
+		attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors, ' +
+			'<a href="https://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>, ' +
+			'Imagery © <a href="https://www.mapbox.com/">Mapbox</a>',
+		id: 'mapbox.streets'
+	}).addTo(mymap);
+
+	L.Control.LookUp = L.Control.extend({
+	  options: {
+	    // topright, topleft, bottomleft, bottomright
+	    position: "topright",
+	    placeholder: "Search..."
+	  },
+	  initialize: function(options /*{ data: {...}  }*/) {
+	    // constructor
+	    L.Util.setOptions(this, options);
+	  },
+	  onAdd: function(map) {
+	    // happens after added to map
+	    var container = L.DomUtil.create("div", "search-container");
+	    this.form = L.DomUtil.create("form", "form", container);
+	    var group = L.DomUtil.create("div", "form-group", this.form);
+	    this.input = L.DomUtil.create("input", "form-control input-sm", group);
+	    this.input.type = "text";
+	    this.input.placeholder = this.options.placeholder;
+	    this.results = L.DomUtil.create("div", "list-group", group);
+		this.results.id = "list";
+	    L.DomEvent.addListener(this.form, "submit", this.submit, this);
+	    L.DomEvent.disableClickPropagation(container);
+		L.DomEvent.disableScrollPropagation(container);
+	    return container;
+	  },
+	  submit: function(e) {
+	    L.DomEvent.preventDefault(e);
+	    search(this.input.value);
+	  }
+	});
+
+	L.control.lookup = function(id, options) {
+	  return new L.Control.LookUp(id, options);
+	};
+
+	function search(callsign) {
+		fetch(callsign)
+	  .then(function(response) {
+	    return response.json();
+	  })
+	  .then(function(myJson) {
+		let p = JSON.parse(JSON.stringify(myJson))
+    	addMarker(p);
+		updateList(p);
+	  });
+	}
+
+	function select(e) {
+		e.preventDefault();
+		var marker = document.querySelector('[title='+e.currentTarget.firstElementChild.innerText+']');
+		console.log(e.currentTarget.firstElementChild.innerText);
+		marker.click();
+	}
+
+	function addMarker(entity) {
+		L.marker([entity.lat, entity.lon], {title:entity.call_sign}).addTo(mymap)
+			.bindPopup("<b>"+entity.call_sign+"</b><br>"+
+			entity.first_name+" "+entity.last_name+"<br>"+
+			entity.street_address+"<br>"+
+		  entity.city+" "+entity.state+" "+entity.zip_code+"<br>").openPopup()
+	}
+
+	function updateList(entity) {
+			list.push(entity)
+			var l = document.getElementById('list');
+			var line = L.DomUtil.create("div", "list-item", l);
+			var s1 = L.DomUtil.create("div", "callsign", line);
+			var s2 = L.DomUtil.create("div", "name", line);
+			var t1 = document.createTextNode(entity.call_sign)
+			var t2 = document.createTextNode(entity.first_name + " " + entity.last_name)
+			s1.appendChild(t1)
+			s2.appendChild(t2)
+			line.appendChild(s1)
+			line.appendChild(s2)
+			l.appendChild(line)
+			L.DomEvent.addListener(line, 'click', select, this);
+	}
+
+	function sort_list(){
+		document.querySelector('#list').innerText= '';
+		list = list.sort((a, b) => (a.call_sign > b.call_sign) ? 1 : -1);
+		list.forEach(function(ent){
+			updateList(ent);
+		})
+	}
+
+	L.control.lookup({}).addTo(mymap);
+
+	setTimeout(search, 100,'ke8ivz')
+	setTimeout(search, 200,'aa8al')
+	setTimeout(search, 300,'aa8cu')
+	setTimeout(search, 400,'aa8cr')
+	setTimeout(search, 500,'aa8cv')
+	setTimeout(search, 500,'aa8kk')
+	setTimeout(search, 500,'aa8j')
+	setTimeout(search, 800,'aa8mt')
+	setTimeout(search, 900,'aa8nw')
+	setTimeout(search, 900,'K3RNX')
+	setTimeout(search, 900,'NM8N')
+	setTimeout(search, 900,'KE8NHY')
+	setTimeout(search, 900,'KE8NHX')
+	setTimeout(search, 900,'KB9VBR')
+
+</script>
+</body></html>
